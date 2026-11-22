@@ -33,8 +33,6 @@ jobs:
           app.write_text(text)
           cache = Path(os.environ.get("PUB_CACHE", Path.home()/".pub-cache")) / "hosted"
           seen = set()
-          for gradle in cache.glob("*/ */android/build.gradle*"):
-              pass
           for gradle in cache.glob("*/*/android/build.gradle*"):
               if gradle.suffix not in (".gradle", ".kts"): continue
               original = gradle.read_text()
@@ -42,9 +40,9 @@ jobs:
               updated, count = re.subn(r'(?m)^(\s*)compileSdk(?:Version)?\s*(?:=\s*)?\d+', lambda m: m.group(1)+replacement, original)
               if count:
                   gradle.write_text(updated)
-                  seen.add(gradle.parent.parent.name.split("-")[0])
+                  seen.add(gradle.parent.parent.name)
           for required in ("file_picker", "flutter_plugin_android_lifecycle"):
-              if required not in seen: raise SystemExit(f"SDK 36 patch missing for {required}; patched: {sorted(seen)}")
+              if not any(name == required or name.startswith(required + "-") for name in seen): raise SystemExit(f"SDK 36 patch missing for {required}; patched: {sorted(seen)}")
           print("Android app and plugins configured for SDK 36")
           PY
       - name: Install dependencies
