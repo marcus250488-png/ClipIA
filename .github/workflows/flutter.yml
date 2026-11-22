@@ -26,7 +26,6 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" || true
           python3 - <<'PY'
           from pathlib import Path
-
           candidates = [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]
           app_gradle = next((p for p in candidates if p.exists()), None)
           if app_gradle is None:
@@ -46,7 +45,7 @@ jobs:
           PY
       - name: Install dependencies
         run: flutter pub get
-      - name: Configure Android plugin compile SDK 36
+      - name: Force Android plugin compile SDK 36
         shell: bash
         run: |
           set -euo pipefail
@@ -56,30 +55,54 @@ jobs:
           import re
 
           cache = Path(os.environ.get("PUB_CACHE", Path.home() / ".pub-cache"))
-          root = cache / "hosted" / "pub.dev"
+          roots = [cache / "hosted" / "pub.dev", cache / "hosted" / "pub.flutter-io.cn"]
           changed = []
-          if root.exists():
-              for gradle in list(root.glob("*/android/build.gradle")) + list(root.glob("*/android/build.gradle.kts")):
+          inspected = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              for gradle in root.glob("*/android/build.gradle*"):
+                  if gradle.suffix not in (".gradle", ".kts"):
+                      continue
                   original = gradle.read_text()
-                  updated = re.sub(r"(?m)^(\s*compileSdk\s*=\s*)\d+", r"\g<1>36", original)
-                  updated = re.sub(r"(?m)^(\s*compileSdkVersion\s+)\d+", r"\g<1>36", updated)
+                  updated = original
+                  if gradle.suffix == ".kts":
+                      updated, count = re.subn(
+                          r"(?m)^(\s*)compileSdk(?:Version)?\s*(?:=\s*)?.*$",
+                          r"\g<1>compileSdk = 36", updated)
+                  else:
+                      updated, count = re.subn(
+                          r"(?m)^(\s*)compileSdk(?:Version)?\s*(?:=\s*)?.*$",
+                          r"\g<1>compileSdkVersion 36", updated)
+                  if count:
+                      inspected.append(str(gradle))
                   if updated != original:
                       gradle.write_text(updated)
                       changed.append(str(gradle))
-          print(f"Updated compileSdk in {len(changed)} plugin Gradle files")
-          for path in changed:
+          print(f"Plugin Gradle files patched: {len(changed)}")
+          print(f"Plugin Gradle files with compileSdk declarations: {len(inspected)}")
+          for path in inspected:
               print(path)
+          for required in ("file_picker", "flutter_plugin_android_lifecycle"):
+              matches = [p for p in inspected if required in p]
+              if not matches:
+                  raise SystemExit(f"Did not find compileSdk declaration for {required} in pub cache")
           PY
-      - name: Verify generated Gradle files have real line breaks
+      - name: Verify plugin SDK configuration
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for path in [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]:
-              if path.exists():
-                  text = path.read_text()
-                  if "\\n" in text:
-                      raise SystemExit(f"Literal \\n found in {path}; refusing to build")
-                  print(f"{path}: {len(text.splitlines())} lines")
+          import os
+          root = Path(os.environ.get("PUB_CACHE", Path.home() / ".pub-cache")) / "hosted"
+          for package in ("file_picker", "flutter_plugin_android_lifecycle"):
+              matches = list(root.glob(f"*/{package}-*/android/build.gradle*"))
+              if not matches:
+                  raise SystemExit(f"Missing Gradle file for {package}")
+              for path in matches:
+                  content = path.read_text()
+                  if "compileSdk = 36" not in content and "compileSdkVersion 36" not in content:
+                      raise SystemExit(f"{package} was not configured to compile against SDK 36: {path}")
+                  print(f"Verified {package}: {path}")
           PY
       - name: Analyze
         run: flutter analyze --no-fatal-infos
