@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/video_project.dart';
 import '../services/project_store.dart';
@@ -18,8 +20,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _store = ProjectStore();
-  bool _busy = false;
+  final _store = ProjectStore.instance;
+  List<VideoProject> _projects = [];
+  bool _busy = false, _loadingProjects = true;
+
+  @override
+  void initState() { super.initState(); _loadProjects(); }
+
+  Future<void> _loadProjects() async {
+    try {
+      final projects = await _store.all();
+      if (mounted) setState(() { _projects = projects; _loadingProjects = false; });
+    } catch (e) {
+      if (mounted) setState(() => _loadingProjects = false);
+    }
+  }
 
   Future<void> _showLinkImport() async {
     final controller = TextEditingController();
@@ -31,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: _panel,
           title: const Text('Adicionar vídeo por link'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('Cole um link de vídeo do YouTube. Aceitamos vídeos, Shorts e transmissões públicas.',
+            const Text('Cole um link de vídeo do YouTube. Use apenas conteúdo seu ou que você tenha autorização para editar.',
               style: TextStyle(color: Colors.white70, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
@@ -60,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 final normalized = YouTubeUrlValidator.normalize(controller.text);
                 if (normalized == null) {
-                  setDialogState(() => error = 'Link não reconhecido. Confira se é um link de vídeo do YouTube.');
+                  setDialogState(() => error = 'Link não reconhecido. Confira o endereço do YouTube.');
                   return;
                 }
                 Navigator.pop(dialogContext, normalized);
@@ -73,45 +88,44 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     controller.dispose();
     if (!mounted || link == null) return;
-    await _showImportNotice(link);
-  }
-
-  Future<void> _showImportNotice(String link) async {
-    final continueImport = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _panel,
-        title: const Text('Link reconhecido'),
-        content: const Text('O endereço foi validado. Nesta versão, a importação automática do vídeo pela URL ainda não está conectada. Você pode selecionar o arquivo de vídeo correspondente no aparelho para continuar editando.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Agora não')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Selecionar arquivo')),
-        ],
-      ),
-    );
-    if (continueImport == true) await _pick(sourceUrl: link);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Link validado. Para editar, importe o arquivo de vídeo autorizado correspondente.')));
+    await _pick(sourceUrl: link);
   }
 
   Future<void> _pick({String? sourceUrl}) async {
     setState(() => _busy = true);
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.video);
-      final path = result?.files.single.path;
-      if (path == null || !await File(path).exists()) return;
+      final selected = result?.files.single;
+      if (selected?.path == null) return;
+      final source = File(selected!.path!);
+      if (!await source.exists()) throw Exception('O arquivo selecionado não foi encontrado.');
+      final dir = await getApplicationDocumentsDirectory();
+      final videos = Directory(p.join(dir.path, 'ClipIA', 'originais'));
+      await videos.create(recursive: true);
+      final safeName = '${DateTime.now().millisecondsSinceEpoch}_${p.basename(selected.name)}';
+      final saved = await source.copy(p.join(videos.path, safeName));
       final project = VideoProject(
-        id: const Uuid().v4(), title: result!.files.single.name, sourcePath: path,
+        id: const Uuid().v4(), title: selected.name, sourcePath: saved.path,
         createdAt: DateTime.now(), sourceUrl: sourceUrl,
-        sourceType: sourceUrl == null ? 'file' : 'youtube',
+        sourceType: sourceUrl == null ? 'file' : 'authorized-local-copy',
       );
-      _store.add(project);
+      await _store.add(project);
+      await _loadProjects();
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectScreen(project: project)));
-      if (mounted) setState(() {});
+      await _loadProjects();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Não foi possível importar: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _openProject(VideoProject project) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectScreen(project: project)));
+    await _loadProjects();
   }
 
   @override
@@ -142,7 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('Transforme vídeos longos em conteúdo que prende atenção.',
               style: TextStyle(fontSize: 25, height: 1.16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
-            const Text('Importe um vídeo, encontre os melhores momentos e prepare seus clipes para redes sociais.',
+            const Text('Importe, encontre momentos, edite em 9:16 e prepare seus clipes para as redes sociais.',
               style: TextStyle(color: Colors.white70, height: 1.45)),
             const SizedBox(height: 22),
             SizedBox(width: double.infinity, child: FilledButton.icon(
@@ -150,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
               onPressed: _busy ? null : _pick,
               icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.video_library_outlined),
-              label: Text(_busy ? 'Aguarde...' : 'Selecionar vídeo do aparelho', style: const TextStyle(fontWeight: FontWeight.bold)),
+              label: Text(_busy ? 'Importando e salvando...' : 'Selecionar vídeo do aparelho', style: const TextStyle(fontWeight: FontWeight.bold)),
             )),
             const SizedBox(height: 10),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
@@ -164,29 +178,31 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 28),
         Row(children: [
           const Expanded(child: Text('Meus projetos', style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold))),
-          Text('${_store.projects.length} projeto(s)', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text('${_projects.length} projeto(s)', style: const TextStyle(color: Colors.white54, fontSize: 12)),
         ]),
         const SizedBox(height: 12),
-        if (_store.projects.isEmpty)
+        if (_loadingProjects)
+          const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+        else if (_projects.isEmpty)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
             decoration: BoxDecoration(color: _panel, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white10)),
             child: const Column(children: [
               Icon(Icons.video_collection_outlined, size: 38, color: Colors.white38), SizedBox(height: 10),
               Text('Sua biblioteca começa aqui', style: TextStyle(fontWeight: FontWeight.w700)), SizedBox(height: 5),
-              Text('Os vídeos que você importar aparecerão nesta área.', textAlign: TextAlign.center,
+              Text('Seus projetos ficam salvos mesmo depois de fechar o aplicativo.', textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white54, fontSize: 12)),
             ]),
           )
         else
-          ..._store.projects.map((p) => Card(
+          ..._projects.map((p) => Card(
             color: _panel,
             child: ListTile(
               leading: const CircleAvatar(backgroundColor: Color(0xFF302642), child: Icon(Icons.movie_outlined, color: _accent)),
               title: Text(p.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text(p.sourceUrl == null ? 'Vídeo do aparelho' : 'Link do YouTube associado'),
+              subtitle: Text(p.sourceUrl == null ? 'Vídeo salvo no aparelho' : 'Arquivo local • link associado'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectScreen(project: p))),
+              onTap: () => _openProject(p),
             ),
           )),
         const SizedBox(height: 22),
