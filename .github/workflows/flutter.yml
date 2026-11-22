@@ -13,7 +13,7 @@ jobs:
           channel: stable
       - name: Generate Android platform
         run: flutter create . --platforms=android
-      - name: Configure Android SDK 36 for app and plugins
+      - name: Configure Android SDK 36 for app
         shell: bash
         run: |
           set -euo pipefail
@@ -27,63 +27,51 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          app_gradle = Path("android/app/build.gradle.kts")
-          if not app_gradle.exists():
-              app_gradle = Path("android/app/build.gradle")
-          if not app_gradle.exists():
+          candidates = [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]
+          app_gradle = next((p for p in candidates if p.exists()), None)
+          if app_gradle is None:
               raise SystemExit("Generated app Gradle file was not found")
-
           lines = app_gradle.read_text().splitlines()
-          changed = False
-          for index, line in enumerate(lines):
+          for i, line in enumerate(lines):
               stripped = line.lstrip()
-              if stripped.startswith("compileSdk") and "=" in stripped:
+              if stripped.startswith("compileSdk") and ("=" in stripped or "compileSdkVersion " in stripped):
                   indent = line[:len(line) - len(stripped)]
-                  lines[index] = indent + "compileSdk = 36"
-                  changed = True
+                  key = "compileSdk" if "=" in stripped else "compileSdkVersion"
+                  lines[i] = f"{indent}{key} = 36" if key == "compileSdk" else f"{indent}{key} 36"
                   break
-              if stripped.startswith("compileSdkVersion "):
-                  indent = line[:len(line) - len(stripped)]
-                  lines[index] = indent + "compileSdkVersion 36"
-                  changed = True
-                  break
-          if not changed:
+          else:
               raise SystemExit("Could not find compileSdk declaration in app Gradle file")
-          app_gradle.write_text("\n".join(lines) + "\n")
+          app_gradle.write_text("\\n".join(lines) + "\\n")
           print(f"Configured app compileSdk 36 in {app_gradle}")
-
-          root_gradle = Path("android/build.gradle.kts")
-          if not root_gradle.exists():
-              raise SystemExit("Generated root build.gradle.kts was not found")
-          root_content = root_gradle.read_text()
-          root_content += """
-
-          // Configure Android app and library modules as their plugins are applied.
-          // Avoid afterEvaluate: Flutter/Gradle may already have evaluated subprojects.
-          subprojects {
-              fun setAndroidCompileSdk36() {
-                  val androidExtension = extensions.findByName("android") ?: return
-                  val setter = androidExtension.javaClass.methods.firstOrNull {
-                      it.name == "compileSdkVersion" &&
-                          it.parameterTypes.size == 1 &&
-                          it.parameterTypes[0] == Int::class.javaPrimitiveType
-                  }
-                  setter?.invoke(androidExtension, 36)
-              }
-
-              plugins.withId("com.android.application") {
-                  setAndroidCompileSdk36()
-              }
-              plugins.withId("com.android.library") {
-                  setAndroidCompileSdk36()
-              }
-          }
-          """
-          root_gradle.write_text(root_content)
-          print("Configured compileSdk 36 for Android subprojects")
           PY
       - name: Install dependencies
         run: flutter pub get
+      - name: Configure Android plugin compile SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          cache = Path(os.environ.get("PUB_CACHE", Path.home() / ".pub-cache"))
+          roots = [cache / "hosted" / "pub.dev"]
+          changed = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              for gradle in list(root.glob("*/android/build.gradle")) + list(root.glob("*/android/build.gradle.kts")):
+                  original = gradle.read_text()
+                  updated = re.sub(r"(?m)^(\\s*compileSdk\\s*=\\s*)\\d+", r"\\g<1>36", original)
+                  updated = re.sub(r"(?m)^(\\s*compileSdkVersion\\s+)\\d+", r"\\g<1>36", updated)
+                  if updated != original:
+                      gradle.write_text(updated)
+                      changed.append(str(gradle))
+          print(f"Updated compileSdk in {len(changed)} plugin Gradle files")
+          for path in changed:
+              print(path)
+          PY
       - name: Analyze
         run: flutter analyze --no-fatal-infos
       - name: Run widget tests
