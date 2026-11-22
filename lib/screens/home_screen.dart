@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isYouTubeUrl(String value) {
     final uri = Uri.tryParse(value.trim());
     if (uri == null || !uri.hasAuthority || !{'https', 'http'}.contains(uri.scheme)) return false;
-    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\\.'), '');
+    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
     return host == 'youtube.com' || host == 'm.youtube.com' ||
         host == 'youtu.be' || host == 'youtube-nocookie.com';
   }
