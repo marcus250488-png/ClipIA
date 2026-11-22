@@ -156,7 +156,7 @@ class _ProjectScreenState extends State<ProjectScreen> {
         FilledButton.icon(
           style:FilledButton.styleFrom(backgroundColor:_accent,foregroundColor:const Color(0xFF211631),
             padding:const EdgeInsets.symmetric(vertical:16)),
-          onPressed:_exporting?_nullExport:null,
+          onPressed:_exporting?null:_export,
           icon:_exporting?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Icon(Icons.movie_creation_outlined),
           label:Text(_exporting?'Renderizando...':'Exportar meu corte'),
         ),
@@ -178,8 +178,6 @@ class _ProjectScreenState extends State<ProjectScreen> {
           style:TextStyle(color:Colors.white38,fontSize:11,height:1.4)),
       ]),
   );
-
-  VoidCallback? _nullExport() => null;
 
   Widget _sectionTitle(String title, IconData icon) => Row(children:[
     Icon(icon,color:_accent,size:20),const SizedBox(width:8),
