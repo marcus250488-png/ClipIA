@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../utils/youtube_url_validator.dart';
 import 'package:uuid/uuid.dart';
 import '../models/video_project.dart';
 import '../services/project_store.dart';
@@ -16,14 +18,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final _store = ProjectStore();
   final _linkController = TextEditingController();
   bool _busy = false;
-
-  bool _isYouTubeUrl(String value) {
-    final uri = Uri.tryParse(value.trim());
-    if (uri == null || !uri.hasAuthority || !{'https', 'http'}.contains(uri.scheme)) return false;
-    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\\.'), '');
-    return host == 'youtube.com' || host == 'm.youtube.com' ||
-        host == 'youtu.be' || host == 'youtube-nocookie.com';
-  }
 
   Future<void> _showLinkImport() async {
     _linkController.clear();
@@ -54,11 +48,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (!mounted || link == null || link.isEmpty) return;
-    if (!_isYouTubeUrl(link)) {
+    final normalizedLink = YouTubeUrlValidator.normalize(link);
+    if (normalizedLink == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Informe um link válido do YouTube.')));
       return;
     }
-    await _pick(sourceUrl: link);
+    await _pick(sourceUrl: normalizedLink);
   }
 
   Future<void> _pick({String? sourceUrl}) async {
