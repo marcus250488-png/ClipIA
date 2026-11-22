@@ -11,6 +11,14 @@ class VideoProbe {
   final int height;
 }
 
+class ClipSuggestion {
+  const ClipSuggestion({required this.start, required this.end, required this.title});
+  final Duration start;
+  final Duration end;
+  final String title;
+  Duration get duration => end - start;
+}
+
 class FfmpegVideoService {
   String _quote(String value) => "'${value.replaceAll("'", "'\\''")}'";
 
@@ -27,36 +35,70 @@ class FfmpegVideoService {
     return VideoProbe(durationSeconds: duration, width: width, height: height);
   }
 
-  Future<String> cut({
+  List<ClipSuggestion> suggestClips(Duration total, {int count = 3}) {
+    final seconds = total.inSeconds;
+    if (seconds < 12) throw Exception('O vídeo precisa ter pelo menos 12 segundos para sugerir cortes.');
+    final length = seconds >= 90 ? 30 : (seconds / 3).floor().clamp(8, 30);
+    final maxStart = seconds - length;
+    return List.generate(count, (i) {
+      final start = count == 1 ? 0 : (maxStart * i / (count - 1)).round();
+      return ClipSuggestion(
+        start: Duration(seconds: start),
+        end: Duration(seconds: start + length),
+        title: 'Sugestão ${i + 1}',
+      );
+    });
+  }
+
+  Future<String> exportClip({
     required String inputPath,
     required Duration start,
     required Duration end,
+    required bool vertical,
+    String? caption,
     required void Function(String stage) onStage,
   }) async {
     if (!await File(inputPath).exists()) throw Exception('Arquivo de origem não encontrado.');
     if (start.isNegative || end <= start) throw Exception('Confira os tempos inicial e final.');
-    final probeInfo = await probe(inputPath);
-    if (end.inMilliseconds > (probeInfo.durationSeconds * 1000).round()) {
+    final info = await probe(inputPath);
+    if (end.inMilliseconds > (info.durationSeconds * 1000).round()) {
       throw Exception('O tempo final ultrapassa a duração do vídeo.');
     }
     final dir = await getApplicationDocumentsDirectory();
     final outputDir = Directory('${dir.path}/ClipIA/cortes');
     await outputDir.create(recursive: true);
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-    final output = '${outputDir.path}/corte_$stamp.mp4';
-    onStage('Preparando corte');
+    final output = '${outputDir.path}/clip_${DateTime.now().microsecondsSinceEpoch}.mp4';
+    onStage('Preparando vídeo');
+    final filters = <String>[];
+    if (vertical) {
+      filters.add('scale=1080:1920:force_original_aspect_ratio=increase');
+      filters.add('crop=1080:1920');
+    }
+    if (caption != null && caption.trim().isNotEmpty) {
+      final safe = caption.trim().replaceAll(r'\\', r'\\\\').replaceAll(':', r'\\:').replaceAll("'", r"\\'").replaceAll('%', r'\\%');
+      filters.add("drawtext=text='$safe':fontcolor=white:fontsize=54:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h*0.78");
+    }
+    final vf = filters.isEmpty ? '' : '-vf ${_quote(filters.join(','))}';
     final command = '-y -ss ${(start.inMilliseconds / 1000).toStringAsFixed(3)} '
-      '-to ${(end.inMilliseconds / 1000).toStringAsFixed(3)} '
-      '-i ${_quote(inputPath)} -map 0:v:0 -map 0:a? -c copy '
-      '-avoid_negative_ts make_zero -movflags +faststart ${_quote(output)}';
-    onStage('Cortando vídeo com FFmpeg');
+      '-to ${(end.inMilliseconds / 1000).toStringAsFixed(3)} -i ${_quote(inputPath)} '
+      '-map 0:v:0 -map 0:a? $vf -c:v ${filters.isEmpty ? 'copy' : 'libx264'} '
+      '-preset veryfast -crf 23 -c:a aac -b:a 160k -movflags +faststart ${_quote(output)}';
+    onStage(vertical ? 'Adaptando para 9:16 e renderizando' : 'Renderizando corte MP4');
     final session = await FFmpegKit.execute(command);
     final code = await session.getReturnCode();
     if (!ReturnCode.isSuccess(code) || !await File(output).exists()) {
       final logs = await session.getOutput();
-      throw Exception('Falha no corte FFmpeg: ${logs ?? 'sem detalhes'}');
+      throw Exception('Falha na exportação: ${logs ?? 'sem detalhes'}');
     }
     onStage('Corte concluído');
     return output;
   }
+
+  Future<String> cut({
+    required String inputPath,
+    required Duration start,
+    required Duration end,
+    required void Function(String stage) onStage,
+  }) => exportClip(inputPath: inputPath, start: start, end: end,
+    vertical: false, onStage: onStage);
 }
