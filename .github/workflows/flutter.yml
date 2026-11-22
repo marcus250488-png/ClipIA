@@ -58,18 +58,24 @@ jobs:
           root_content = root_gradle.read_text()
           root_content += """
 
-          // Set compile SDK 36 on Android plugin modules as well.
+          // Configure Android app and library modules as their plugins are applied.
+          // Avoid afterEvaluate: Flutter/Gradle may already have evaluated subprojects.
           subprojects {
-              afterEvaluate {
-                  val androidExtension = extensions.findByName("android")
-                  if (androidExtension != null) {
-                      val setter = androidExtension.javaClass.methods.firstOrNull {
-                          it.name == "compileSdkVersion" &&
-                              it.parameterTypes.size == 1 &&
-                              it.parameterTypes[0] == Int::class.javaPrimitiveType
-                      }
-                      setter?.invoke(androidExtension, 36)
+              fun setAndroidCompileSdk36() {
+                  val androidExtension = extensions.findByName("android") ?: return
+                  val setter = androidExtension.javaClass.methods.firstOrNull {
+                      it.name == "compileSdkVersion" &&
+                          it.parameterTypes.size == 1 &&
+                          it.parameterTypes[0] == Int::class.javaPrimitiveType
                   }
+                  setter?.invoke(androidExtension, 36)
+              }
+
+              plugins.withId("com.android.application") {
+                  setAndroidCompileSdk36()
+              }
+              plugins.withId("com.android.library") {
+                  setAndroidCompileSdk36()
               }
           }
           """
