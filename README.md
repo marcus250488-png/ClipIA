@@ -2,13 +2,18 @@
 
 App Flutter/Android para transformar vídeos longos em cortes curtos.
 
+## Importação por link do YouTube
+A tela aceita links válidos do YouTube para identificar a origem do conteúdo. O link, sozinho, não é tratado como arquivo de mídia e o app não baixa vídeos diretamente do YouTube nem contorna DRM, paywalls ou controles de acesso.
+
+Para editar, selecione o arquivo de vídeo que você possui ou que obteve por um meio autorizado (por exemplo, exportação/download oficial disponibilizado ao titular pelo YouTube Studio). A integração futura com fontes autorizadas será feita por adaptadores específicos, respeitando permissões e termos de cada serviço.
+
 ## Marco M2 — primeiro motor FFmpeg
 - Importação de vídeo local.
 - Prévia do arquivo.
 - Corte manual por tempo inicial e final (MM:SS ou HH:MM:SS).
 - Exportação MP4 para a pasta privada do app.
 - Verificação de duração e dimensões via FFprobe.
-- O corte usa stream copy para preservar a qualidade e evitar recodificação nesta primeira etapa.
+- O corte usa stream copy para preservar a qualidade e evitar recompressão nesta primeira etapa.
 
 ## Dependência FFmpeg e licença
 Usamos `ffmpeg_kit_flutter_new_full`, uma distribuição comunitária mantida do FFmpegKit, sem componentes GPL adicionais no pacote full. A licença do wrapper é LGPL-3.0; FFmpeg e bibliotecas incluídas mantêm suas licenças próprias. Verifique e distribua os avisos de licença exigidos antes de publicar o APK. Documentação: https://pub.dev/packages/ffmpeg_kit_flutter_new_full
@@ -22,10 +27,10 @@ flutter run
 ```
 
 ## Limitações conhecidas deste marco
-- Não é ainda o gerador automático de cortes por IA.
-- O corte por stream copy pode começar alguns frames antes/depois do timestamp solicitado, dependendo dos keyframes do vídeo.
-- Não há ainda codificação/reframe 1080x1920, legendas, cancelamento, progresso percentual real, biblioteca persistente nem sincronização.
-- O arquivo exportado fica no armazenamento privado do app; a ação de salvar/compartilhar para a galeria será adicionada em outra etapa.
-- O projeto ainda precisa ser compilado e testado em dispositivo Android real.
+- A análise automática de melhores momentos por IA ainda não está conectada.
+- O campo de link reconhece URLs do YouTube, mas não obtém a mídia diretamente; a edição começa após selecionar um arquivo local autorizado.
+- O corte por stream copy pode começar alguns frames antes/depois do timestamp solicitado, dependendo dos keyframes.
+- Ainda não há reframe 1080x1920, legendas, cancelamento, progresso percentual real, biblioteca persistente nem compartilhamento para a galeria.
+- O projeto precisa ser compilado e testado em dispositivo Android real.
 
-Importe apenas conteúdo que você tem direito de editar. Não contorne DRM, paywalls ou controles de acesso.
+Importe apenas conteúdo que você tem direito de editar.
