@@ -13,7 +13,7 @@ jobs:
           channel: stable
       - name: Generate Android platform
         run: flutter create . --platforms=android
-      - name: Configure Android SDK 36
+      - name: Configure Android SDK 36 for app and plugins
         shell: bash
         run: |
           set -euo pipefail
@@ -26,23 +26,48 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" || true
           python3 - <<'PY'
           from pathlib import Path
-          candidates = [
-              Path("android/app/build.gradle"),
-              Path("android/app/build.gradle.kts"),
-          ]
-          configured = False
-          for path in candidates:
-              if path.exists():
-                  content = path.read_text()
-                  content = content.replace("flutter.compileSdkVersion", "36")
-                  content = content.replace("compileSdkVersion 34", "compileSdkVersion 36")
-                  content = content.replace("compileSdk = 34", "compileSdk = 36")
-                  path.write_text(content)
-                  if "compileSdk" in content:
-                      configured = True
-                      print(f"Configured compile SDK 36 in {path}")
-          if not configured:
-              raise SystemExit("Could not configure compileSdk 36 in generated Android app")
+          import re
+
+          app_gradle = Path("android/app/build.gradle.kts")
+          if not app_gradle.exists():
+              app_gradle = Path("android/app/build.gradle")
+          if not app_gradle.exists():
+              raise SystemExit("Generated app Gradle file was not found")
+
+          content = app_gradle.read_text()
+          content, count = re.subn(
+              r"(?m)^(\\s*compileSdk\\s*=\\s*).+$",
+              r"\\g<1>36",
+              content,
+          )
+          content, legacy_count = re.subn(
+              r"(?m)^(\\s*compileSdkVersion\\s+).+$",
+              r"\\g<1>36",
+              content,
+          )
+          if count + legacy_count == 0:
+              raise SystemExit("Could not find compileSdk declaration in app Gradle file")
+          app_gradle.write_text(content)
+          print(f"Configured app compileSdk 36 in {app_gradle}")
+
+          root_gradle = Path("android/build.gradle.kts")
+          if not root_gradle.exists():
+              raise SystemExit("Generated root build.gradle.kts was not found")
+          root_content = root_gradle.read_text()
+          root_content += """
+
+          // Ensure Flutter Android plugin modules use the same required compile SDK.
+          subprojects {
+              afterEvaluate {
+                  val androidExtension = extensions.findByName("android")
+                  if (androidExtension is com.android.build.gradle.BaseExtension) {
+                      androidExtension.compileSdkVersion(36)
+                  }
+              }
+          }
+          """
+          root_gradle.write_text(root_content)
+          print("Configured compileSdk 36 for all Android subprojects")
           PY
       - name: Install dependencies
         run: flutter pub get
