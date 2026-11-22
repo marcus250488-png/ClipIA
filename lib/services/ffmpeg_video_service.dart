@@ -16,7 +16,7 @@ class FfmpegVideoService {
 
   Future<VideoProbe> probe(String inputPath) async {
     final session = await FFprobeKit.getMediaInformation(inputPath);
-    final info = await session.getMediaInformation();
+    final info = session.getMediaInformation();
     if (info == null) throw Exception('Não foi possível ler as informações do vídeo.');
     final duration = double.tryParse(info.getDuration() ?? '');
     final streams = info.getStreams();

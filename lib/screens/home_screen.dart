@@ -20,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isYouTubeUrl(String value) {
     final uri = Uri.tryParse(value.trim());
     if (uri == null || !uri.hasAuthority || !{'https', 'http'}.contains(uri.scheme)) return false;
-    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
+    final host = uri.host.toLowerCase().replaceFirst(RegExp(r'^www\\.'), '');
     return host == 'youtube.com' || host == 'm.youtube.com' ||
         host == 'youtu.be' || host == 'youtube-nocookie.com';
   }
@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final link = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Importar por link do YouTube'),
+        title: const Text('Importar link do YouTube'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: _linkController,
@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'O link identifica o vídeo, mas não baixa o conteúdo. Para editar, o ClipIA precisa receber o arquivo por uma forma autorizada, como um arquivo seu exportado pelo YouTube Studio.',
+            'O ClipIA aceita links de vídeos de qualquer canal. Nesta versão, o link fica associado ao projeto, mas a importação automática da mídia ainda está em desenvolvimento. Para começar a editar agora, selecione o arquivo de vídeo disponível no seu dispositivo.',
             style: TextStyle(fontSize: 12),
           ),
         ]),
@@ -58,13 +58,10 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Informe um link válido do YouTube.')));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Link reconhecido. Selecione o arquivo de vídeo obtido por uma fonte autorizada para começar a edição.')),
-    );
-    await _pick();
+    await _pick(sourceUrl: link);
   }
 
-  Future<void> _pick() async {
+  Future<void> _pick({String? sourceUrl}) async {
     setState(() => _busy = true);
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.video);
@@ -75,6 +72,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: result!.files.single.name,
         sourcePath: path,
         createdAt: DateTime.now(),
+        sourceUrl: sourceUrl,
+        sourceType: sourceUrl == null ? 'file' : 'youtube',
       );
       _store.add(project);
       if (!mounted) return;
@@ -99,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
     body: ListView(padding: const EdgeInsets.all(20), children: [
       const Text('Transforme vídeos longos em cortes curtos', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
-      const Text('Importe um vídeo, escolha o trecho e exporte seu primeiro corte. A seleção inteligente por IA virá em outra etapa.'),
+      const Text('Cole um link do YouTube ou importe um vídeo da galeria para criar seus cortes.'),
       const SizedBox(height: 20),
       FilledButton.icon(
         onPressed: _busy ? null : _pick,
@@ -117,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ..._store.projects.map((p) => Card(
         child: ListTile(
           title: Text(p.title),
-          subtitle: const Text('Vídeo importado'),
+          subtitle: Text(p.sourceUrl == null ? 'Vídeo importado' : 'Origem: YouTube'),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProjectScreen(project: p))),
         ),
       )),
