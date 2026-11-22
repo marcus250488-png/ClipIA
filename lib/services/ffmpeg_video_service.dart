@@ -80,7 +80,7 @@ class FfmpegVideoService {
     }
     final vf = filters.isEmpty ? '' : '-vf ${_quote(filters.join(','))}';
     final command = '-y -ss ${(start.inMilliseconds / 1000).toStringAsFixed(3)} '
-      '-to ${(end.inMilliseconds / 1000).toStringAsFixed(3)} -i ${_quote(inputPath)} '
+      '-i ${_quote(inputPath)} -t ${((end - start).inMilliseconds / 1000).toStringAsFixed(3)} '
       '-map 0:v:0 -map 0:a? $vf -c:v ${filters.isEmpty ? 'copy' : 'libx264'} '
       '-preset veryfast -crf 23 -c:a aac -b:a 160k -movflags +faststart ${_quote(output)}';
     onStage(vertical ? 'Adaptando para 9:16 e renderizando' : 'Renderizando corte MP4');
