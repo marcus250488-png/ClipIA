@@ -26,7 +26,6 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" || true
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           app_gradle = Path("android/app/build.gradle.kts")
           if not app_gradle.exists():
@@ -34,20 +33,23 @@ jobs:
           if not app_gradle.exists():
               raise SystemExit("Generated app Gradle file was not found")
 
-          content = app_gradle.read_text()
-          content, count = re.subn(
-              r"(?m)^(\\s*compileSdk\\s*=\\s*).+$",
-              r"\\g<1>36",
-              content,
-          )
-          content, legacy_count = re.subn(
-              r"(?m)^(\\s*compileSdkVersion\\s+).+$",
-              r"\\g<1>36",
-              content,
-          )
-          if count + legacy_count == 0:
+          lines = app_gradle.read_text().splitlines()
+          changed = False
+          for index, line in enumerate(lines):
+              stripped = line.lstrip()
+              if stripped.startswith("compileSdk") and "=" in stripped:
+                  indent = line[:len(line) - len(stripped)]
+                  lines[index] = indent + "compileSdk = 36"
+                  changed = True
+                  break
+              if stripped.startswith("compileSdkVersion "):
+                  indent = line[:len(line) - len(stripped)]
+                  lines[index] = indent + "compileSdkVersion 36"
+                  changed = True
+                  break
+          if not changed:
               raise SystemExit("Could not find compileSdk declaration in app Gradle file")
-          app_gradle.write_text(content)
+          app_gradle.write_text("\n".join(lines) + "\n")
           print(f"Configured app compileSdk 36 in {app_gradle}")
 
           root_gradle = Path("android/build.gradle.kts")
@@ -56,18 +58,23 @@ jobs:
           root_content = root_gradle.read_text()
           root_content += """
 
-          // Ensure Flutter Android plugin modules use the same required compile SDK.
+          // Set compile SDK 36 on Android plugin modules as well.
           subprojects {
               afterEvaluate {
                   val androidExtension = extensions.findByName("android")
-                  if (androidExtension is com.android.build.gradle.BaseExtension) {
-                      androidExtension.compileSdkVersion(36)
+                  if (androidExtension != null) {
+                      val setter = androidExtension.javaClass.methods.firstOrNull {
+                          it.name == "compileSdkVersion" &&
+                              it.parameterTypes.size == 1 &&
+                              it.parameterTypes[0] == Int::class.javaPrimitiveType
+                      }
+                      setter?.invoke(androidExtension, 36)
                   }
               }
           }
           """
           root_gradle.write_text(root_content)
-          print("Configured compileSdk 36 for all Android subprojects")
+          print("Configured compileSdk 36 for Android subprojects")
           PY
       - name: Install dependencies
         run: flutter pub get
